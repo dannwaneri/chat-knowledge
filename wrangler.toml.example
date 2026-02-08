@@ -1,0 +1,22 @@
+name = "chat-knowledge-api"
+main = "src/worker/index.ts"
+compatibility_date = "2024-01-01"
+
+# INSTRUCTIONS:
+# 1. Copy this file to wrangler.toml
+# 2. Run: wrangler d1 create chat-knowledge-db
+# 3. Replace YOUR_DATABASE_ID below with the ID from step 2
+# 4. Run: wrangler vectorize create chat-knowledge-embeddings --dimensions=768 --metric=cosine
+# 5. Replace YOUR_INDEX_NAME below with the name from step 4
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chat-knowledge-db"
+database_id = "YOUR_DATABASE_ID"  # Replace with your D1 database ID
+
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "YOUR_INDEX_NAME"  # Replace with your Vectorize index name
+
+[ai]
+binding = "AI"

@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.wrangler/
+
+# Environment files (NEVER COMMIT THESE)
+.env
+.dev.vars
+*.local
+
+# Cloudflare configuration with secrets (CRITICAL - DO NOT COMMIT)
+wrangler.toml
+wrangler.jsonc
+
+# User data (keep private)
+data/
+!data/exports/.gitkeep
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

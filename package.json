@@ -1,0 +1,35 @@
+{
+  "name": "chat-knowledge",
+  "version": "1.0.0",
+  "description": "Personal knowledge base from chat conversations",
+  "type": "module",
+  "main": "dist/mcp-server/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev:worker": "wrangler dev src/worker/index.ts",
+    "deploy": "wrangler deploy src/worker/index.ts",
+    "dev:mcp": "node --loader ts-node/esm src/mcp-server/index.ts"
+  },
+  "keywords": [
+    "mcp",
+    "knowledge",
+    "memory",
+    "ai"
+  ],
+  "author": "Daniel Nwaneri",
+  "license": "MIT",
+  "dependencies": {
+    "@cloudflare/ai": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "hono": "^4.11.8",
+    "jsdom": "^28.0.0",
+    "tiktoken": "^1.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/jsdom": "^27.0.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^3.0.0"
+  }
+}
