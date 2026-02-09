@@ -13,7 +13,7 @@
 - No attribution, no discovery, no commons
 - Knowledge collapse is happening in real-time
 
-[Read the full analysis →](https://dev.to/dannwaneri/were-creating-a-knowledge-collapse-ec9)
+[Read the full analysis →](https://dev.to/the-foundation/i-built-federated-ai-knowledge-commons-heres-how-56oj)
 
 ## The Solution
 
@@ -165,7 +165,7 @@ MIT License - see LICENSE file
 
 1. [My Chrome Tabs Tell a Story](https://dev.to/dannwaneri/chrome-tabs-story) - The observation
 2. [We're Creating a Knowledge Collapse](https://dev.to/dannwaneri/knowledge-collapse) - The problem  
-3. [I Built Federated AI Knowledge Commons](https://dev.to/dannwaneri/built-knowledge-commons) - The solution (you're here)
+3. [I Shipped the Solution to Knowledge Collapse in 21 Days](https://dev.to/the-foundation/i-built-federated-ai-knowledge-commons-heres-how-56oj) - The solution (you're here)
 
 ## Author
 
