@@ -1,22 +1,45 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { Env, ImportRequest, SearchRequest, SearchResult } from '../types/index.js';
-import { sharing } from './routes/sharing';
-import { federatedSearch } from './routes/federated-search';
-import { activitypub } from './routes/activitypub';
-import { preShareReview } from './routes/pre-share-review';
+import { getSearchHTML } from './ui/search';
+import { getChatHTML, chatViewerScript } from './ui/chat';
+import importExtension from './routes/import-extension.js';
+import { nodeinfo } from './routes/nodeinfo';
+import { webfinger } from './routes/webfinger';
+import { actor } from './routes/actor';
 
 const app = new Hono<{ Bindings: Env }>();
 
-
 app.use('/*', cors({
   origin: '*',
-  allowHeaders: ['Content-Type'],
+  allowHeaders: ['Content-Type', 'Accept'],
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 }));
 
+// ============================================
+// WEB UI ROUTES
+// ============================================
 
 app.get('/', (c) => {
+  return c.html(getSearchHTML());
+});
+
+app.get('/view/:chatId', (c) => {
+  return c.html(getChatHTML());
+});
+
+app.get('/chat-viewer.js', (c) => {
+  return c.text(chatViewerScript, 200, {
+    'Content-Type': 'application/javascript; charset=utf-8',
+    'Cache-Control': 'public, max-age=3600'
+  });
+});
+
+// ============================================
+// API DOCUMENTATION
+// ============================================
+
+app.get('/api', (c) => {
   return c.json({
     name: 'Chat Knowledge API',
     version: '1.0.0',
@@ -45,13 +68,19 @@ app.get('/', (c) => {
   });
 });
 
+// ============================================
+// FEDERATION & SHARING ROUTES
+// ============================================
 
-app.route('/api/sharing', sharing);
-app.route('/api/federated-search', federatedSearch);
-app.route('/api/pre-share-review', preShareReview);
-app.route('/.well-known', activitypub);
-app.route('/federation', activitypub);
 
+app.route('/api/import/extension', importExtension);
+app.route('/.well-known', nodeinfo);
+app.route('/.well-known', webfinger);
+app.route('/federation', actor);
+
+// ============================================
+// CORE API ENDPOINTS
+// ============================================
 
 app.post('/import', async (c) => {
   const { chatId, title, chunks, metadata }: ImportRequest = await c.req.json();
@@ -130,7 +159,8 @@ app.post('/search', async (c) => {
   const chunks: SearchResult[] = await Promise.all(
     results.matches.slice(0, maxResults).map(async (match) => {
       const chunk = await c.env.DB.prepare(`
-        SELECT c.*, ch.title as chat_title, ch.metadata as chat_metadata
+        SELECT c.*, ch.title as chat_title, ch.imported_at as chat_imported_at,
+               ch.summary as chat_summary, ch.source as chat_source
         FROM chunks c
         JOIN chats ch ON c.chat_id = ch.id
         WHERE c.id = ?
@@ -145,8 +175,12 @@ app.post('/search', async (c) => {
         chatTitle: chunk.chat_title as string,
         chatId: chunk.chat_id as string,
         relevance: match.score || 0,
-        metadata: JSON.parse(chunk.metadata as string),
-        chatMetadata: JSON.parse(chunk.chat_metadata as string)
+        metadata: JSON.parse(chunk.metadata as string || '{}'),
+        chatMetadata: {
+          importedAt: chunk.chat_imported_at,
+          source: chunk.chat_source,
+          summary: chunk.chat_summary
+        }
       };
     })
   );
@@ -160,7 +194,7 @@ app.post('/search', async (c) => {
 
 app.get('/chats', async (c) => {
   const { results } = await c.env.DB.prepare(`
-    SELECT id, title, imported_at, message_count, metadata
+    SELECT id, title, summary, source, visibility, message_count, imported_at, created_at
     FROM chats
     ORDER BY imported_at DESC
   `).all();
@@ -170,28 +204,35 @@ app.get('/chats', async (c) => {
 
 app.get('/chat/:chatId', async (c) => {
   const chatId = c.req.param('chatId');
-  
+
+  // Check Accept header - serve HTML for browser, JSON for API
+  const accept = c.req.header('Accept') || '';
+  if (!accept.includes('application/json')) {
+    return c.html(getChatHTML());
+  }
+
+  // Fetch chat metadata
   const chat = await c.env.DB.prepare(`
-    SELECT * FROM chats WHERE id = ?
+    SELECT id, title, summary, source, visibility, message_count, created_at, imported_at
+    FROM chats WHERE id = ?
   `).bind(chatId).first();
 
   if (!chat) {
-    return c.json({ error: 'Chat not found' }, 404);
+    return c.json({ error: 'Conversation not found' }, 404);
   }
 
-  const { results: chunks } = await c.env.DB.prepare(`
-    SELECT * FROM chunks WHERE chat_id = ? ORDER BY chunk_index
+  // Fetch messages in order (source of truth)
+  const { results: messages } = await c.env.DB.prepare(`
+    SELECT id, role, content, message_index, created_at, truncated
+    FROM messages
+    WHERE chat_id = ?
+    ORDER BY message_index ASC
   `).bind(chatId).all();
 
-  return c.json({ 
-    chat: {
-      ...chat,
-      metadata: JSON.parse(chat.metadata as string)
-    },
-    chunks: chunks.map(ch => ({
-      ...ch,
-      metadata: JSON.parse(ch.metadata as string)
-    }))
+  return c.json({
+    chat,
+    messages,
+    count: messages.length
   });
 });
 

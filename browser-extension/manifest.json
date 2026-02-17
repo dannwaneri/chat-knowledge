@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Chat Knowledge",
+  "version": "0.1.0",
+  "description": "Save Claude conversations to your knowledge commons",
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": ["https://claude.ai/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["capture.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

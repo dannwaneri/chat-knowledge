@@ -112,7 +112,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const data: any = await response.json();
 
       const chatList = data.chats.map((c: any) => 
-        `- ${c.title} (${c.message_count} chunks, imported ${new Date(c.imported_at).toLocaleDateString()})`
+        `- ${c.title} (${c.message_count} messages, imported ${new Date(c.imported_at).toLocaleDateString()})`
       ).join('\n');
 
       return {
@@ -124,7 +124,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === 'get_chat_context') {
-      const response = await fetch(`${WORKER_URL}/chat/${args.chatId}`);
+      const response = await fetch(`${WORKER_URL}/chat/${args.chatId}`, {
+        headers: { 'Accept': 'application/json' }
+      });
       
       if (!response.ok) {
         throw new Error(`Get chat failed: ${response.statusText}`);
@@ -132,12 +134,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const data: any = await response.json();
 
-      const context = data.chunks.map((c: any) => c.content).join('\n\n---\n\n');
+      const context = data.messages.map((m: any) => 
+        `[${m.role.toUpperCase()}]: ${m.content}`
+      ).join('\n\n---\n\n');
 
       return {
         content: [{
           type: 'text',
-          text: `Chat: ${data.chat.title}\n\n${context}`
+          text: `Chat: ${data.chat.title}\n\nSummary: ${data.chat.summary || 'N/A'}\n\n${context}`
         }]
       };
     }

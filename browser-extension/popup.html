@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      width: 380px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f3f0;
+      color: #2a2a2a;
+    }
+
+    .header {
+      background: #2a2a2a;
+      color: #f5f3f0;
+      padding: 16px 20px;
+      border-bottom: 3px solid #8b4513;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .header p {
+      font-size: 12px;
+      color: #ccc;
+    }
+
+    .stats {
+      display: flex;
+      gap: 12px;
+      padding: 16px 20px;
+      background: #fff;
+      border-bottom: 1px solid #d4d0ca;
+    }
+
+    .stat-item {
+      flex: 1;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #8b4513;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+
+    .actions {
+      padding: 12px 20px;
+      background: #fff;
+      border-bottom: 1px solid #d4d0ca;
+    }
+
+    .btn-primary {
+      width: 100%;
+      padding: 10px 16px;
+      background: #8b4513;
+      color: #fff;
+      border: none;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+
+    .btn-primary:hover {
+      background: #6d3510;
+    }
+
+    #conversations {
+      max-height: 320px;
+      overflow-y: auto;
+      background: #f5f3f0;
+    }
+
+    .conv {
+      padding: 14px 20px;
+      background: #fff;
+      border-bottom: 1px solid #e8e5e0;
+      transition: background 0.2s;
+    }
+
+    .conv:hover {
+      background: #fafaf8;
+    }
+
+    .conv button {
+      width: 100%;
+      padding: 8px 12px;
+      background: #2a2a2a;
+      color: #f5f3f0;
+      border: none;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 3px;
+      transition: background 0.2s;
+    }
+
+    .conv button:hover {
+      background: #1a1a1a;
+    }
+
+    .status {
+      display: none;
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      padding: 12px 16px;
+      background: #2a2a2a;
+      color: #fff;
+      font-size: 13px;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 1000;
+    }
+
+    .status.success {
+      background: #2e7d32;
+    }
+
+    .status.error {
+      background: #c62828;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #e8e5e0;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #d4d0ca;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #b8b5b0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>The Foundation</h1>
+    <p>Knowledge commons for AI conversations</p>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="stat-item">
+      <div class="stat-value">—</div>
+      <div class="stat-label">Conversations</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value">—</div>
+      <div class="stat-label">Messages</div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" id="openFoundation">Open The Foundation</button>
+  </div>
+
+  <div id="conversations"></div>
+  
+  <div id="status" class="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
