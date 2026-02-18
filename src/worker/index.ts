@@ -156,7 +156,7 @@ app.post('/search', async (c) => {
     returnMetadata: true
   });
 
-  const chunks: SearchResult[] = await Promise.all(
+  const chunks: SearchResult[] = (await Promise.all(
     results.matches.slice(0, maxResults).map(async (match) => {
       const chunk = await c.env.DB.prepare(`
         SELECT c.*, ch.title as chat_title, ch.imported_at as chat_imported_at,
@@ -167,7 +167,8 @@ app.post('/search', async (c) => {
       `).bind(match.id).first();
 
       if (!chunk) {
-        throw new Error(`Chunk ${match.id} not found`);
+        console.log(`Chunk ${match.id} not found (stale Vectorize entry)`);
+        return null;
       }
 
       return {
@@ -183,7 +184,7 @@ app.post('/search', async (c) => {
         }
       };
     })
-  );
+  )).filter(Boolean) as SearchResult[];
 
   return c.json({ 
     query,
