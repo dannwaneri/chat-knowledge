@@ -12,7 +12,7 @@ export const actor = new Hono<{ Bindings: Bindings }>();
 actor.get('/actor', async (c) => {
   const instanceDomain = new URL(c.req.url).hostname;
 
-  return c.json({
+  const actorData = {
     '@context': [
       'https://www.w3.org/ns/activitystreams',
       'https://w3id.org/security/v1'
@@ -54,10 +54,10 @@ TQIDAQAB
       mediaType: 'image/png',
       url: `https://${instanceDomain}/icon.png`
     }
-  }, {
-    headers: {
-      'Content-Type': 'application/activity+json; charset=utf-8'
-    }
+  };
+
+  return c.body(JSON.stringify(actorData), 200, {
+    'Content-Type': 'application/activity+json; charset=utf-8'
   });
 });
 
@@ -72,16 +72,16 @@ actor.get('/followers', async (c) => {
     WHERE status = 'active'
   `).all();
 
-  return c.json({
+  const followersData = {
     '@context': 'https://www.w3.org/ns/activitystreams',
     type: 'OrderedCollection',
     id: `https://${instanceDomain}/federation/followers`,
     totalItems: results.length,
     orderedItems: results.map(r => r.instance_url)
-  }, {
-    headers: {
-      'Content-Type': 'application/activity+json; charset=utf-8'
-    }
+  };
+
+  return c.body(JSON.stringify(followersData), 200, {
+    'Content-Type': 'application/activity+json; charset=utf-8'
   });
 });
 
@@ -95,16 +95,16 @@ actor.get('/following', async (c) => {
     WHERE status = 'active'
   `).all();
 
-  return c.json({
+  const followingData = {
     '@context': 'https://www.w3.org/ns/activitystreams',
     type: 'OrderedCollection',
     id: `https://${instanceDomain}/federation/following`,
     totalItems: results.length,
     orderedItems: results.map(r => r.instance_url)
-  }, {
-    headers: {
-      'Content-Type': 'application/activity+json; charset=utf-8'
-    }
+  };
+
+  return c.body(JSON.stringify(followingData), 200, {
+    'Content-Type': 'application/activity+json; charset=utf-8'
   });
 });
 
@@ -117,16 +117,16 @@ actor.get('/outbox', async (c) => {
 
   // For now, return empty outbox
   // Later: query federation_activities table
-  return c.json({
+  const outboxData = {
     '@context': 'https://www.w3.org/ns/activitystreams',
     type: 'OrderedCollection',
     id: `https://${instanceDomain}/federation/outbox`,
     totalItems: 0,
     orderedItems: []
-  }, {
-    headers: {
-      'Content-Type': 'application/activity+json; charset=utf-8'
-    }
+  };
+
+  return c.body(JSON.stringify(outboxData), 200, {
+    'Content-Type': 'application/activity+json; charset=utf-8'
   });
 });
 
