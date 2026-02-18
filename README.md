@@ -272,7 +272,7 @@ MIT License - see LICENSE file
 
 ## Related Articles
 
-1. [The Foundation Update: From Theory to Working Federation](https://dev.to/the-foundation/foundation-update) - What changed and why
+1. [The Foundation Update: From Theory to Working Federation](https://dev.to/the-foundation/the-foundation-update-from-theory-to-working-federation-2ejm) - What changed and why
 2. [I Built Federated AI Knowledge Commons](https://dev.to/the-foundation/i-built-federated-ai-knowledge-commons-heres-how-56oj) - Original launch article
 
 ## Author
