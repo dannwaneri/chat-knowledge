@@ -163,7 +163,7 @@ app.post('/search', async (c) => {
                ch.summary as chat_summary, ch.source as chat_source
         FROM chunks c
         JOIN chats ch ON c.chat_id = ch.id
-        WHERE c.id = ?
+        WHERE c.id = ? AND ch.visibility = 'public'
       `).bind(match.id).first();
 
       if (!chunk) {
@@ -197,6 +197,7 @@ app.get('/chats', async (c) => {
   const { results } = await c.env.DB.prepare(`
     SELECT id, title, summary, source, visibility, message_count, imported_at, created_at
     FROM chats
+    WHERE visibility = 'public'
     ORDER BY imported_at DESC
   `).all();
 
