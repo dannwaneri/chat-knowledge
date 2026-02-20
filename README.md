@@ -26,7 +26,9 @@ Self-hosted • Privacy-first • Developer-owned
 🌐 **ActivityPub Federation** - Discoverable on Mastodon, ready to federate  
 ⚡ **Browser Extension** - Auto-captures via Claude's internal API  
 💰 **Edge-Native** - Self-hosted on Cloudflare Workers (free tier works)  
-📱 **Mobile-Friendly** - Clean UI that works everywhere
+📱 **Mobile-Friendly** - Clean UI that works everywhere  
+🔒 **Privacy-First** - All chats private by default. You control what's public  
+🤖 **MCP Integration** - Query your full private knowledge base via Claude Desktop
 
 ## Live Demo
 
@@ -39,6 +41,8 @@ Production instance: https://chat-knowledge-api.fpl-test.workers.dev
 - ✅ ActivityPub endpoints (NodeInfo, WebFinger, Actor)
 - ✅ Homepage with recent conversations grid
 - ✅ Clean conversation viewer with syntax highlighting
+- ✅ Privacy controls (public/private per chat)
+- ✅ MCP server for Claude Desktop integration
 
 ## Quick Start
 
@@ -84,6 +88,10 @@ node generate-keypair.mjs
 wrangler secret put ACTIVITYPUB_PRIVATE_KEY
 # (paste private key when prompted)
 
+# Set API key for private MCP access
+wrangler secret put API_KEY
+# (enter a strong key — you'll use this in Claude Desktop config)
+
 # Update src/routes/actor.ts with public key
 
 # Deploy
@@ -99,6 +107,29 @@ npm run deploy
 # 3. Click "Load unpacked"
 # 4. Select the extension/ folder
 ```
+
+#### 3. Set Up MCP Server (Claude Desktop)
+
+```bash
+# Build the MCP server
+npm run build
+
+# Add to your Claude Desktop config (~/.config/claude/claude_desktop_config.json):
+{
+  "mcpServers": {
+    "chat-knowledge": {
+      "command": "node",
+      "args": ["/path/to/chat-knowledge/dist/mcp-server/index.js"],
+      "env": {
+        "WORKER_URL": "https://your-worker.workers.dev",
+        "API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. You can now ask Claude to search your knowledge base directly.
 
 ### Using the Extension
 
@@ -125,10 +156,49 @@ npm run deploy
 ### Searching Your Knowledge
 
 Visit your Worker URL to search:
-- Homepage shows recent conversations
+- Homepage shows recent **public** conversations
 - Search box for semantic queries
 - Click results → land on exact message with highlight
 - "Passage X of Y" labels for multiple matches
+
+## Privacy Model
+
+**All captured chats are private by default.** Visitors to your instance only see what you deliberately make public.
+
+### How It Works
+
+```
+Capture chat → private by default
+     ↓
+Review in your instance
+     ↓
+Flip to public when ready
+     ↓
+Appears on homepage + search for visitors
+     ↓
+(Future) Federates to ActivityPub followers
+```
+
+### Making a Chat Public
+
+```bash
+wrangler d1 execute chat-knowledge-db --remote --command="UPDATE chats SET visibility = 'public' WHERE id = 'your-chat-id'"
+```
+
+To find chat IDs:
+
+```bash
+wrangler d1 execute chat-knowledge-db --remote --command="SELECT id, title, visibility FROM chats"
+```
+
+### MCP vs Public Access
+
+| Access | Endpoint | Sees |
+|--------|----------|------|
+| Visitors (browser) | `/chats`, `/search` | Public chats only |
+| You (MCP/Claude Desktop) | `/api/private/chats` + API key | All chats |
+
+This means you get the full power of semantic search across your entire private knowledge base through Claude Desktop, while visitors only see what you've curated.
 
 ## Architecture
 
@@ -152,11 +222,18 @@ Worker Processing:
   - Store in D1 (chats + messages + chunks)
   - Generate embeddings via Workers AI
   - Index in Vectorize
+  - Default visibility: private
     ↓
-Search:
+Search (public):
   - Query → embedding → Vectorize match
+  - Filter to public chats only
   - Return passage snippets with message_index
   - UI scrolls to exact message, highlights it
+    ↓
+Search (private via MCP):
+  - API key authenticated
+  - Full access to all chats
+  - Used by Claude Desktop MCP integration
     ↓
 Federation:
   - ActivityPub Actor with RSA keypair
@@ -224,12 +301,15 @@ Search for `@knowledge@your-worker-domain.workers.dev`
 - [x] Homepage with recent conversations
 - [x] Clean conversation viewer
 - [x] Mobile-friendly UI
+- [x] Privacy controls (public/private per chat)
+- [x] MCP server for Claude Desktop
+- [x] Private API endpoint for authenticated access
 
 **Next Month:**
 - [ ] Test Mastodon follow flow
-- [ ] MCP server integration
 - [ ] Collections feature
 - [ ] Analytics dashboard
+- [ ] One-click visibility toggle in UI
 
 **3-6 Months:**
 - [ ] Federated Q&A (separate product, same protocol)
@@ -260,6 +340,13 @@ This is infrastructure for the developer commons. Contributions welcome!
 - Wait ~30 seconds after capture for indexing
 - Try broader search terms
 - Check Worker logs: `wrangler tail`
+- Remember: search only returns public chats for visitors
+
+### MCP not showing all chats?
+- Verify `API_KEY` secret is set: `wrangler secret list`
+- Confirm `API_KEY` in `claude_desktop_config.json` matches exactly
+- Rebuild MCP server: `npm run build`
+- Fully restart Claude Desktop (quit from tray, not just close window)
 
 ### ActivityPub not working?
 - Verify public key is in actor.ts
