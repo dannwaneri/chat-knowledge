@@ -7,6 +7,7 @@ import importExtension from './routes/import-extension.js';
 import { nodeinfo } from './routes/nodeinfo';
 import { webfinger } from './routes/webfinger';
 import { actor } from './routes/actor';
+import { FoundationMCP } from "../mcp-server/index.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -193,6 +194,46 @@ app.post('/search', async (c) => {
   });
 });
 
+
+app.get('/api/private/chats', async (c) => {
+  const apiKey = c.req.header('X-API-Key');
+  if (apiKey !== c.env.API_KEY) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT id, title, summary, source, visibility, message_count, imported_at, created_at
+    FROM chats
+    ORDER BY imported_at DESC
+  `).all();
+
+  return c.json({ chats: results });
+});
+
+
+app.post('/api/polish', async (c) => {
+  const { content } = await c.req.json();
+  
+  const result = await c.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+    prompt: `Fix only spelling and grammar in this message. Do NOT add, remove, or change any words unless they are clearly misspelled. Do not infer or add context. Return only the corrected message:\n\n${content}`
+  });
+
+  return c.json({ polished: result.response });
+});
+
+
+app.all("/mcp/*", async (c) => {
+  const apiKey = c.req.header("X-API-Key") || "";
+  if (apiKey !== c.env.API_KEY) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  return FoundationMCP.serve("/mcp").fetch(
+    c.req.raw,
+    c.env,
+    c.executionCtx
+  );
+});
+
 app.get('/chats', async (c) => {
   const { results } = await c.env.DB.prepare(`
     SELECT id, title, summary, source, visibility, message_count, imported_at, created_at
@@ -239,3 +280,5 @@ app.get('/chat/:chatId', async (c) => {
 });
 
 export default app;
+
+export { FoundationMCP };

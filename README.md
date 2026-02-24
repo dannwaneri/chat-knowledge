@@ -110,26 +110,25 @@ npm run deploy
 
 #### 3. Set Up MCP Server (Claude Desktop)
 
-```bash
-# Build the MCP server
-npm run build
+Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on Mac):
 
-# Add to your Claude Desktop config (~/.config/claude/claude_desktop_config.json):
+```json
 {
   "mcpServers": {
     "chat-knowledge": {
-      "command": "node",
-      "args": ["/path/to/chat-knowledge/dist/mcp-server/index.js"],
-      "env": {
-        "WORKER_URL": "https://your-worker.workers.dev",
-        "API_KEY": "your-api-key-here"
-      }
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://your-worker.workers.dev/mcp",
+        "--header",
+        "X-API-Key:your-api-key-here"
+      ]
     }
   }
 }
 ```
 
-Restart Claude Desktop. You can now ask Claude to search your knowledge base directly.
+Restart Claude Desktop. No local build required — the MCP server runs on Cloudflare.
 
 ### Using the Extension
 
@@ -304,6 +303,8 @@ Search for `@knowledge@your-worker-domain.workers.dev`
 - [x] Privacy controls (public/private per chat)
 - [x] MCP server for Claude Desktop
 - [x] Private API endpoint for authenticated access
+- [x] Remote MCP server via Cloudflare Agents SDK (no local process)
+- [x] Polish UX toggle (Raw/Polished view for user messages)
 
 **Next Month:**
 - [ ] Test Mastodon follow flow
@@ -342,11 +343,11 @@ This is infrastructure for the developer commons. Contributions welcome!
 - Check Worker logs: `wrangler tail`
 - Remember: search only returns public chats for visitors
 
-### MCP not showing all chats?
+### MCP not connecting?
 - Verify `API_KEY` secret is set: `wrangler secret list`
-- Confirm `API_KEY` in `claude_desktop_config.json` matches exactly
-- Rebuild MCP server: `npm run build`
+- Confirm key in config matches exactly (no spaces around the colon)
 - Fully restart Claude Desktop (quit from tray, not just close window)
+- Test the endpoint directly: `curl https://your-worker.workers.dev/mcp`
 
 ### ActivityPub not working?
 - Verify public key is in actor.ts

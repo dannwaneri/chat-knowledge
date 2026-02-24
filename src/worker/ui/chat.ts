@@ -135,6 +135,7 @@ body { font-family: 'Inter', -apple-system, sans-serif; font-size: 15px; line-he
     <div class="nav-title" id="navTitle">Loading...</div>
   </div>
   <div class="nav-meta" id="navMeta"></div>
+  <button id="polishToggle" onclick="togglePolish()" style="font-size:12px;color:var(--text-secondary);background:none;border:1px solid var(--border);padding:4px 10px;border-radius:3px;cursor:pointer;font-family:inherit;white-space:nowrap;">Raw</button>
 </nav>
 <div class="container">
   <div id="app">
@@ -151,7 +152,7 @@ body { font-family: 'Inter', -apple-system, sans-serif; font-size: 15px; line-he
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
-<script src="/chat-viewer.js"></script>
+<script src="/chat-viewer.js?v=2"></script>
 </body>
 </html>`;
 }
@@ -192,6 +193,7 @@ function getChatViewerScript(): string {
   lines.push("  document.title = chat.title + ' \u2014 The Foundation';");
   lines.push("  document.getElementById('navTitle').textContent = chat.title;");
   lines.push("  document.getElementById('navMeta').textContent = messages.length + ' messages' + (chat.imported_at ? ' \u00b7 ' + formatDate(chat.imported_at) : '');");
+  lines.push("  rawMessages = messages.filter(function(m) { return m.role === 'user'; });");
   lines.push("  var summaryHTML = chat.summary ? buildSummary(chat.summary) : '';");
   lines.push("  var messagesHTML = messages.map(buildMessage).join('');");
   lines.push("  document.getElementById('app').innerHTML =");
@@ -232,6 +234,35 @@ function getChatViewerScript(): string {
   lines.push("  var btn = document.getElementById('summaryToggle');");
   lines.push("  var collapsed = text.classList.toggle('collapsed');");
   lines.push("  btn.textContent = collapsed ? 'Show more' : 'Show less';");
+  lines.push("}");
+  lines.push("");
+
+  lines.push("var polished = false;");
+  lines.push("var rawMessages = [];");
+  lines.push("var polishCache = {};");
+  lines.push("function togglePolish() {");
+  lines.push("  polished = !polished;");
+  lines.push("  document.getElementById('polishToggle').textContent = polished ? 'Polished' : 'Raw';");
+  lines.push("  if (!polished) {");
+  lines.push("    document.querySelectorAll('.message.user .message-body').forEach(function(el, i) {");
+  lines.push("      el.innerHTML = formatProse(rawMessages[i].content);");
+  lines.push("    });");
+  lines.push("    return;");
+  lines.push("  }");
+  lines.push("  var queue = rawMessages.slice(0, 10).map(function(msg, i) { return {msg: msg, i: i}; });");
+  lines.push("  function processNext() {");
+  lines.push("    if (!queue.length) return;");
+  lines.push("    var item = queue.shift();");
+  lines.push("    var el = document.querySelectorAll('.message.user .message-body')[item.i];");
+  lines.push("    if (!el) { processNext(); return; }");
+  lines.push("    if (polishCache[item.i]) { el.innerHTML = formatProse(polishCache[item.i]); processNext(); return; }");
+  lines.push("    el.innerHTML = '<em style=\"color:var(--text-muted);font-size:13px\">Polishing...</em>';");
+  lines.push("    fetch('/api/polish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: item.msg.content }) })");
+  lines.push("      .then(function(r) { return r.json(); })");
+  lines.push("      .then(function(data) { polishCache[item.i] = data.polished; el.innerHTML = formatProse(data.polished); processNext(); })");
+  lines.push("      .catch(function() { el.innerHTML = formatProse(item.msg.content); processNext(); });");
+  lines.push("  }");
+  lines.push("  processNext();");
   lines.push("}");
   lines.push("");
 

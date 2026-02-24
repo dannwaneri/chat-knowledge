@@ -2,6 +2,8 @@ export interface Env {
     AI: any;
     VECTORIZE: VectorizeIndex;
     DB: D1Database;
+    API_KEY: string;
+    MCP_OBJECT: DurableObjectNamespace;
   }
   
   export interface ImportRequest {
