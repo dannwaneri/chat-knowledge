@@ -14,8 +14,6 @@ export class FoundationMCP extends McpAgent<Env> {
   });
 
   async init() {
-    
-
     this.server.tool(
       "list_chats",
       "List all conversations in The Foundation knowledge base including private ones",
@@ -115,6 +113,196 @@ export class FoundationMCP extends McpAgent<Env> {
             text: JSON.stringify({ chat, messages }, null, 2),
           }],
         };
+      }
+    );
+
+    this.server.tool(
+      "get_insights",
+      "Get extracted insights from a conversation — decisions, solutions, commands, patterns, dead ends. Much cheaper than loading full chat.",
+      {
+        chatId: z.string().describe("The chat ID to get insights for"),
+        minScore: z.number().optional().describe("Minimum score filter 0.0-1.0. Omit to return all insights."),
+      },
+      async ({ chatId, minScore }) => {
+        const url = minScore !== undefined
+          ? `https://chat-knowledge-api.fpl-test.workers.dev/api/insights/${chatId}?minScore=${minScore}`
+          : `https://chat-knowledge-api.fpl-test.workers.dev/api/insights/${chatId}`;
+
+        const response = await fetch(url, {
+          headers: { 'X-API-Key': this.env.API_KEY }
+        });
+        const data = await response.json() as any;
+
+        if (!data.total) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ message: "No insights extracted yet. Run extraction first." }) }]
+          };
+        }
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(data.insights, null, 2) }]
+        };
+      }
+    );
+
+    this.server.tool(
+      "extract_insights",
+      "Trigger insight extraction for a conversation. Call this once per chat before using get_insights.",
+      {
+        chatId: z.string().describe("The chat ID to extract insights from"),
+        force: z.boolean().optional().describe("Force re-extraction even if insights already exist. Default false."),
+      },
+      async ({ chatId, force = false }) => {
+        const response = await fetch(
+          `https://chat-knowledge-api.fpl-test.workers.dev/api/insights/extract/${chatId}${force ? '?force=true' : ''}`,
+          {
+            method: 'POST',
+            headers: { 'X-API-Key': this.env.API_KEY }
+          }
+        );
+        const data = await response.json() as any;
+        return {
+          content: [{ type: "text", text: JSON.stringify(data, null, 2) }]
+        };
+      }
+    );
+
+    this.server.tool(
+      "create_collection",
+      "Create a new collection to group related chats together",
+      {
+        title: z.string().describe("Collection title"),
+        description: z.string().optional().describe("Optional description"),
+        visibility: z.enum(["private", "public"]).optional().describe("Default private"),
+      },
+      async ({ title, description, visibility = "private" }) => {
+        const response = await fetch(
+          `https://chat-knowledge-api.fpl-test.workers.dev/api/collections`,
+          {
+            method: "POST",
+            headers: { "X-API-Key": this.env.API_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ title, description, visibility }),
+          }
+        );
+        const data = await response.json();
+        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+      }
+    );
+
+    this.server.tool(
+      "list_collections",
+      "List all collections with their chat counts",
+      {},
+      async () => {
+        const response = await fetch(
+          `https://chat-knowledge-api.fpl-test.workers.dev/api/collections`,
+          { headers: { "X-API-Key": this.env.API_KEY } }
+        );
+        const data = await response.json();
+        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+      }
+    );
+
+    this.server.tool(
+      "get_collection",
+      "Get a collection with all its chats and aggregated insights across all member chats",
+      {
+        collectionId: z.string().describe("The collection ID"),
+      },
+      async ({ collectionId }) => {
+        const response = await fetch(
+          `https://chat-knowledge-api.fpl-test.workers.dev/api/collections/${collectionId}`,
+          { headers: { "X-API-Key": this.env.API_KEY } }
+        );
+        const data = await response.json();
+        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+      }
+    );
+
+    this.server.tool(
+      "add_chat_to_collection",
+      "Add a chat to a collection",
+      {
+        collectionId: z.string().describe("The collection ID"),
+        chatId: z.string().describe("The chat ID to add"),
+      },
+      async ({ collectionId, chatId }) => {
+        const response = await fetch(
+          `https://chat-knowledge-api.fpl-test.workers.dev/api/collections/${collectionId}/chats`,
+          {
+            method: "POST",
+            headers: { "X-API-Key": this.env.API_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ chatId }),
+          }
+        );
+        const data = await response.json();
+        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+      }
+    );
+
+    this.server.tool(
+     "review_insights",
+      "Query the Evaluator API to get insights ranked by numeric score (0.0-1.0). This is the ONLY tool that returns score, usage_count, promoted, and flagged fields. Use this instead of get_insights when you need quality-ranked results.",
+      {
+        minScore: z.number().optional().describe("Minimum score 0.0-1.0, default 0.3"),
+        chatId: z.string().optional().describe("Filter by specific chat"),
+        flagged: z.boolean().optional().describe("Show only flagged insights needing review"),
+      },
+      async ({ minScore = 0.3, chatId, flagged }) => {
+        let url = `https://chat-knowledge-api.fpl-test.workers.dev/api/evaluator/review?minScore=${minScore}`;
+        if (chatId) url += `&chatId=${chatId}`;
+        if (flagged) url += `&flagged=true`;
+        const response = await fetch(url, { headers: { "X-API-Key": this.env.API_KEY } });
+        const data = await response.json();
+        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+      }
+    );
+
+    this.server.tool(
+      "promote_insight",
+      "Promote an insight to semantic memory — marks it as validated knowledge worth keeping permanently.",
+      {
+        insightId: z.string().describe("The insight ID to promote"),
+      },
+      async ({ insightId }) => {
+        const response = await fetch(
+          `https://chat-knowledge-api.fpl-test.workers.dev/api/evaluator/promote/${insightId}`,
+          { method: "POST", headers: { "X-API-Key": this.env.API_KEY } }
+        );
+        const data = await response.json();
+        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+      }
+    );
+
+    this.server.tool(
+      "flag_insight",
+      "Flag an insight for human review — marks it as needing validation before promotion.",
+      {
+        insightId: z.string().describe("The insight ID to flag"),
+      },
+      async ({ insightId }) => {
+        const response = await fetch(
+          `https://chat-knowledge-api.fpl-test.workers.dev/api/evaluator/flag/${insightId}`,
+          { method: "POST", headers: { "X-API-Key": this.env.API_KEY } }
+        );
+        const data = await response.json();
+        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+      }
+    );
+
+    this.server.tool(
+      "score_insights",
+      "Re-score all insights for a chat using the specificity algorithm.",
+      {
+        chatId: z.string().describe("The chat ID to score insights for"),
+      },
+      async ({ chatId }) => {
+        const response = await fetch(
+          `https://chat-knowledge-api.fpl-test.workers.dev/api/evaluator/score/${chatId}`,
+          { method: "POST", headers: { "X-API-Key": this.env.API_KEY } }
+        );
+        const data = await response.json();
+        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       }
     );
   }

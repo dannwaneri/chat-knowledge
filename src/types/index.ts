@@ -3,6 +3,7 @@ export interface Env {
     VECTORIZE: VectorizeIndex;
     DB: D1Database;
     API_KEY: string;
+    ANTHROPIC_API_KEY?: string;
     MCP_OBJECT: DurableObjectNamespace;
   }
   

@@ -150,3 +150,59 @@ CREATE TABLE IF NOT EXISTS chunk_redactions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunk_redactions_chunk ON chunk_redactions(chunk_id);
+
+
+
+-- ============================================
+
+-- Knowledge: extracted insights from conversations
+CREATE TABLE IF NOT EXISTS insights (
+  id TEXT PRIMARY KEY,
+  chat_id TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('decision', 'solution', 'command', 'pattern', 'dead_end', 'relationship', 'commitment', 'context')),
+  content TEXT NOT NULL,
+  context TEXT,
+  tags TEXT DEFAULT '[]',
+  score REAL DEFAULT 0.0,               -- specificity score 0.0-1.0
+  usage_count INTEGER DEFAULT 0,        -- times retrieved/referenced
+  promoted INTEGER DEFAULT 0,           -- 1 = semantic memory, 0 = episodic
+  flagged INTEGER DEFAULT 0,            -- 1 = needs human review
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_insights_chat_id ON insights(chat_id);
+CREATE INDEX IF NOT EXISTS idx_insights_type ON insights(type);
+
+
+
+
+-- ============================================
+
+-- Knowledge: collections of related chats
+CREATE TABLE IF NOT EXISTS collections (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  visibility TEXT DEFAULT 'private',     -- 'private' | 'public'
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_collections_visibility ON collections(visibility);
+
+-- ============================================
+
+-- Knowledge: chats belonging to a collection
+CREATE TABLE IF NOT EXISTS collection_chats (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  collection_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  added_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+  FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+  UNIQUE(collection_id, chat_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_chats_collection ON collection_chats(collection_id);
+CREATE INDEX IF NOT EXISTS idx_collection_chats_chat ON collection_chats(chat_id);

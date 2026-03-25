@@ -3,11 +3,18 @@ import { cors } from 'hono/cors';
 import { Env, ImportRequest, SearchRequest, SearchResult } from '../types/index.js';
 import { getSearchHTML } from './ui/search';
 import { getChatHTML, chatViewerScript } from './ui/chat';
+import { getCollectionsHTML, getCollectionDetailHTML } from './ui/collections';
+import { getChatsHTML } from './ui/chats';
 import importExtension from './routes/import-extension.js';
 import { nodeinfo } from './routes/nodeinfo';
 import { webfinger } from './routes/webfinger';
 import { actor } from './routes/actor';
 import { FoundationMCP } from "../mcp-server/index.js";
+import { ChatSanitizer } from './utils/sanitizer.js';
+import insightsRoute from './routes/insights.js';
+import collectionsRoute from './routes/collections.js';
+import evaluatorRoute from './routes/evaluator.js';
+import broadcastRoute from './routes/broadcast.js';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -27,6 +34,14 @@ app.get('/', (c) => {
 
 app.get('/view/:chatId', (c) => {
   return c.html(getChatHTML());
+});
+
+app.get('/collections', (c) => {
+  return c.html(getCollectionsHTML());
+});
+
+app.get('/collections/:collectionId', (c) => {
+  return c.html(getCollectionDetailHTML());
 });
 
 app.get('/chat-viewer.js', (c) => {
@@ -78,6 +93,10 @@ app.route('/api/import/extension', importExtension);
 app.route('/.well-known', nodeinfo);
 app.route('/.well-known', webfinger);
 app.route('/federation', actor);
+app.route('/api/insights', insightsRoute);
+app.route('/api/collections', collectionsRoute);
+app.route('/api/evaluator', evaluatorRoute);
+app.route('/api/federation', broadcastRoute);
 
 // ============================================
 // CORE API ENDPOINTS
@@ -211,17 +230,6 @@ app.get('/api/private/chats', async (c) => {
 });
 
 
-app.post('/api/polish', async (c) => {
-  const { content } = await c.req.json();
-  
-  const result = await c.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-    prompt: `Fix only spelling and grammar in this message. Do NOT add, remove, or change any words unless they are clearly misspelled. Do not infer or add context. Return only the corrected message:\n\n${content}`
-  });
-
-  return c.json({ polished: result.response });
-});
-
-
 app.all("/mcp/*", async (c) => {
   const apiKey = c.req.header("X-API-Key") || "";
   if (apiKey !== c.env.API_KEY) {
@@ -235,14 +243,15 @@ app.all("/mcp/*", async (c) => {
 });
 
 app.get('/chats', async (c) => {
-  const { results } = await c.env.DB.prepare(`
-    SELECT id, title, summary, source, visibility, message_count, imported_at, created_at
-    FROM chats
-    WHERE visibility = 'public'
-    ORDER BY imported_at DESC
-  `).all();
-
-  return c.json({ chats: results });
+  const accept = c.req.header('Accept') || '';
+  if (accept.includes('application/json')) {
+    const { results } = await c.env.DB.prepare(`
+    SELECT id, title, summary, source, visibility, message_count, imported_at, created_at, model
+    FROM chats WHERE visibility = 'public' ORDER BY imported_at DESC
+    `).all();
+    return c.json({ chats: results });
+  }
+  return c.html(getChatsHTML());
 });
 
 app.get('/chat/:chatId', async (c) => {
@@ -277,6 +286,216 @@ app.get('/chat/:chatId', async (c) => {
     messages,
     count: messages.length
   });
+});
+
+// Paginated messages endpoint
+app.get('/api/chats/:chatId/messages', async (c) => {
+  const chatId = c.req.param('chatId');
+  const offset = parseInt(c.req.query('offset') || '0');
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
+
+  const chat = await c.env.DB.prepare(`
+    SELECT id, title FROM chats WHERE id = ?
+  `).bind(chatId).first();
+
+  if (!chat) return c.json({ error: 'Chat not found' }, 404);
+
+  const { results: messages } = await c.env.DB.prepare(`
+    SELECT role, content, message_index
+    FROM messages
+    WHERE chat_id = ?
+    ORDER BY message_index ASC
+    LIMIT ? OFFSET ?
+  `).bind(chatId, limit, offset).all();
+
+  const total = await c.env.DB.prepare(`
+    SELECT COUNT(*) as count FROM messages WHERE chat_id = ?
+  `).bind(chatId).first() as { count: number };
+
+  return c.json({
+    chatId,
+    messages,
+    offset,
+    limit,
+    total: total.count,
+    hasMore: offset + limit < total.count
+  });
+});
+
+
+// Auto-broadcast when chat goes public
+app.post('/api/chats/:chatId/visibility', async (c) => {
+  const apiKey = c.req.header('X-API-Key');
+  if (apiKey !== c.env.API_KEY) return c.json({ error: 'Unauthorized' }, 401);
+  const chatId = c.req.param('chatId');
+  const { visibility } = await c.req.json();
+  if (!['public', 'private'].includes(visibility)) return c.json({ error: 'Invalid visibility value' }, 400);
+  await c.env.DB.prepare(`UPDATE chats SET visibility = ? WHERE id = ?`).bind(visibility, chatId).run();
+  // Auto-broadcast to followers when chat goes public
+  if (visibility === 'public') {
+    const chat = await c.env.DB.prepare(
+      `SELECT title, summary FROM chats WHERE id = ?`
+    ).bind(chatId).first() as any;
+    if (chat) {
+      const instanceDomain = new URL(c.req.url).hostname;
+      const privateKey = (c.env as any).ACTIVITYPUB_PRIVATE_KEY;
+      const keyId = `https://${instanceDomain}/federation/actor#main-key`;
+      const summary = chat.summary
+        ? chat.summary.substring(0, 200).replace(/\*\*/g, '').replace(/\n/g, ' ') + '…'
+        : '';
+      const activity = {
+        '@context': 'https://www.w3.org/ns/activitystreams',
+        type: 'Create',
+        id: `https://${instanceDomain}/federation/activities/${crypto.randomUUID()}`,
+        actor: `https://${instanceDomain}/federation/actor`,
+        object: {
+          type: 'Note',
+          id: `https://${instanceDomain}/notes/${chatId}`,
+          content: `<p><strong>${chat.title}</strong></p>${summary ? `<p>${summary}</p>` : ''}<p><a href="https://${instanceDomain}/view/${chatId}">Read on Foundation →</a></p>`,
+          url: `https://${instanceDomain}/view/${chatId}`,
+          attributedTo: `https://${instanceDomain}/federation/actor`,
+          published: new Date().toISOString(),
+          to: ['https://www.w3.org/ns/activitystreams#Public']
+        }
+      };
+      if (privateKey) {
+        c.executionCtx.waitUntil(
+          (async () => {
+            try {
+              const { results: followers } = await c.env.DB.prepare(
+                `SELECT shared_inbox, instance_url FROM federated_instances WHERE status = 'active'`
+              ).all() as { results: any[] };
+              const { signAndSend } = await import('./routes/federation-sign.js');
+              for (const follower of followers) {
+                const inboxUrl = follower.shared_inbox || follower.instance_url;
+                await signAndSend(privateKey, keyId, inboxUrl, activity).catch(e =>
+                  console.error('[broadcast] Failed to deliver to', inboxUrl, e)
+                );
+              }
+              console.log(`[broadcast] Auto-broadcast complete for chat ${chatId}`);
+            } catch (e) {
+              console.error('[broadcast] Auto-broadcast error:', e);
+            }
+          })()
+        );
+      }
+    }
+  }
+  return c.json({ success: true, chatId, visibility });
+});
+
+
+// CLI capture endpoint
+app.post('/api/import/cli', async (c) => {
+  const apiKey = c.req.header('X-API-Key');
+  if (apiKey !== c.env.API_KEY) return c.json({ error: 'Unauthorized' }, 401);
+
+  const { sessionId, title, messages, model, metadata } = await c.req.json();
+  if (!sessionId || !title || !Array.isArray(messages)) {
+    return c.json({ error: 'Missing required fields: sessionId, title, messages' }, 400);
+  }
+
+  // Dedup check
+  const existing = await c.env.DB.prepare(
+    `SELECT id FROM chats WHERE id = ?`
+  ).bind(sessionId).first();
+
+  if (existing) return c.json({ error: 'Already exists' }, 409);
+
+  // Insert chat
+  await c.env.DB.prepare(`
+    INSERT INTO chats (id, title, source, model, visibility, message_count, imported_at, created_at)
+    VALUES (?, ?, ?, ?, 'private', ?, datetime('now'), datetime('now'))
+  `).bind(
+    sessionId,
+    title,
+    'claude-code-cli',
+    model || null,
+    messages.length
+  ).run();
+
+  // Sanitise messages before storage
+  const sanitizer = new ChatSanitizer();
+  const sanitized = await sanitizer.redactChat(
+    messages.map((m: any) => ({ speaker: m.role, content: m.content })),
+    { autoRedactCritical: true }
+  );
+  const redactedCount = sanitized.filter((m: any) => m.redacted).length;
+  if (redactedCount > 0) {
+    console.log(`[import-cli] Redacted secrets from ${redactedCount} message(s)`);
+  }
+  // Replace messages content with sanitised versions
+  messages.forEach((m: any, i: number) => { m.content = sanitized[i].content; });
+
+  // Insert messages + build Vectorize vectors
+  const vectors: { id: string; values: number[]; metadata: Record<string, VectorizeVectorMetadata> }[] = [];
+
+  for (const msg of messages) {
+    const msgId = crypto.randomUUID();
+    await c.env.DB.prepare(`
+      INSERT INTO messages (id, chat_id, role, content, message_index, created_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      msgId,
+      sessionId,
+      msg.role,
+      msg.content,
+      msg.message_index
+    ).run();
+
+    // Only vectorize non-empty content
+    if (msg.content && msg.content.trim().length > 10) {
+      try {
+        const embeddingResult = await c.env.AI.run('@cf/baai/bge-base-en-v1.5', {
+          text: msg.content.substring(0, 2000) // cap to avoid token limits
+        });
+        const embedding = embeddingResult.data[0];
+        if (embedding) {
+          const chunkId = `${sessionId}-msg-${msg.message_index}`;
+          // Insert into chunks table for search
+          await c.env.DB.prepare(`
+            INSERT OR IGNORE INTO chunks (id, chat_id, chunk_index, content, tokens, metadata, vector_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          `).bind(
+            chunkId,
+            sessionId,
+            msg.message_index,
+            msg.content.substring(0, 2000),
+            Math.ceil(msg.content.length / 4),
+            JSON.stringify({ message_index: msg.message_index, role: msg.role }),
+            chunkId
+          ).run();
+          vectors.push({
+            id: chunkId,
+            values: embedding,
+            metadata: {
+              chat_id: sessionId,
+              chunk_index: msg.message_index,
+              content_preview: msg.content.substring(0, 200)
+            }
+          });
+        }
+      } catch (e) {
+        console.warn(`[cli-import] Embedding failed for message ${msg.message_index}:`, e);
+      }
+    }
+  }
+
+  // Upsert all vectors to Vectorize
+  if (vectors.length > 0) {
+    await c.env.VECTORIZE.upsert(vectors);
+    console.log(`[cli-import] Vectorized ${vectors.length} messages for session ${sessionId}`);
+  }
+
+  // Trigger async insight extraction
+  c.executionCtx.waitUntil(
+    fetch(`${c.req.url.split('/api/')[0]}/api/insights/${sessionId}/extract`, {
+      method: 'POST',
+      headers: { 'X-API-Key': c.env.API_KEY }
+    }).catch(() => {})
+  );
+
+  return c.json({ success: true, chatId: sessionId, messagesImported: messages.length });
 });
 
 export default app;

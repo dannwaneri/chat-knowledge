@@ -37,26 +37,15 @@
         `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}`,
         { credentials: 'include' }
       );
-  
+    
       if (!res.ok) {
         throw new Error(`Failed to fetch conversation: ${res.status} ${res.statusText}`);
       }
-  
-      return await res.json();
-      // Returns full conversation object:
-      // {
-      //   uuid, name, created_at, updated_at,
-      //   chat_messages: [
-      //     {
-      //       uuid, sender, text, created_at,
-      //       attachments: [...],
-      //       files: [...],
-      //       content: [...] // includes artifacts
-      //     }
-      //   ]
-      // }
+    
+      const data = await res.json();
+      
+      return data;
     }
-  
     // ============================================
     // EXTRACT CONVERSATION ID FROM URL
     // ============================================
@@ -181,6 +170,7 @@
         id: apiData.uuid,
         title: apiData.name || 'Untitled Conversation',
         summary: apiData.summary || '',   // Claude auto-generates this - FREE semantic summary
+        model: apiData.model || null, 
         created_at: apiData.created_at,
         updated_at: apiData.updated_at,
         message_count: messages.length,

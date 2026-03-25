@@ -8,7 +8,8 @@
     "build": "tsc",
     "dev:worker": "wrangler dev src/worker/index.ts",
     "deploy": "wrangler deploy src/worker/index.ts",
-    "dev:mcp": "node --loader ts-node/esm src/mcp-server/index.ts"
+    "dev:mcp": "node --loader ts-node/esm src/mcp-server/index.ts",
+    "capture": "node cli/capture.cjs"
   },
   "keywords": [
     "mcp",

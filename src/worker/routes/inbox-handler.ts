@@ -15,13 +15,16 @@ inbox.post('/inbox', async (c) => {
     
     console.log('Received activity:', activity.type, 'from', activity.actor);
 
-    // TODO: Verify HTTP signature here
-    // For now, we'll trust the activity (SECURITY RISK - fix in production)
+    const valid = await verifySignature(c.req.raw);
+    if (!valid) {
+      console.warn('[inbox] Rejected unverified activity from:', activity.actor);
+      return c.json({ error: 'Invalid signature' }, 401);
+    }
 
     // Route based on activity type
     switch (activity.type) {
       case 'Follow':
-        await handleFollow(c.env.DB, activity, instanceDomain);
+        await handleFollow(c.env.DB, activity, instanceDomain, c.env.ACTIVITYPUB_PRIVATE_KEY);
         break;
       
       case 'Undo':
@@ -59,46 +62,149 @@ inbox.post('/inbox', async (c) => {
   }
 });
 
+async function verifySignature(req: Request): Promise<boolean> {
+  try {
+    const signatureHeader = req.headers.get('Signature');
+    if (!signatureHeader) {
+      console.warn('[inbox] No Signature header — rejecting');
+      return false;
+    }
+
+    // Parse Signature header into key=value pairs
+    const params: Record<string, string> = {};
+    for (const part of signatureHeader.split(',')) {
+      const eq = part.indexOf('=');
+      if (eq === -1) continue;
+      const k = part.slice(0, eq).trim();
+      const v = part.slice(eq + 1).trim().replace(/^"(.*)"$/, '$1');
+      params[k] = v;
+    }
+
+    const { keyId, headers: signedHeaders, signature } = params;
+    if (!keyId || !signedHeaders || !signature) {
+      console.warn('[inbox] Missing Signature params');
+      return false;
+    }
+
+    // Fetch actor's public key
+    const actorUrl = keyId.includes('#') ? keyId.split('#')[0] : keyId;
+    const actorRes = await fetch(actorUrl, {
+      headers: { 'Accept': 'application/activity+json' }
+    });
+    if (!actorRes.ok) {
+      console.warn('[inbox] Could not fetch actor:', actorUrl);
+      return false;
+    }
+    const actor = await actorRes.json() as any;
+    const publicKeyPem: string = actor?.publicKey?.publicKeyPem;
+    if (!publicKeyPem) {
+      console.warn('[inbox] Actor has no publicKey.publicKeyPem');
+      return false;
+    }
+
+    // Rebuild signing string from signed headers
+    const url = new URL(req.url);
+    const headerMap: Record<string, string> = {
+      '(request-target)': `post ${url.pathname}`,
+      'host': req.headers.get('host') || url.host,
+      'date': req.headers.get('date') || '',
+      'digest': req.headers.get('digest') || '',
+      'content-type': req.headers.get('content-type') || '',
+    };
+
+    const signingString = signedHeaders
+      .split(' ')
+      .map(h => `${h}: ${headerMap[h] ?? req.headers.get(h) ?? ''}`)
+      .join('\n');
+
+    // Import public key
+    const pemContents = publicKeyPem
+      .replace(/-----BEGIN PUBLIC KEY-----/, '')
+      .replace(/-----END PUBLIC KEY-----/, '')
+      .replace(/\s/g, '');
+
+    const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
+    const publicKey = await crypto.subtle.importKey(
+      'spki',
+      binaryDer.buffer,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+
+    // Verify signature
+    const sigBytes = Uint8Array.from(atob(signature), c => c.charCodeAt(0));
+    const encoder = new TextEncoder();
+    const valid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      publicKey,
+      sigBytes,
+      encoder.encode(signingString)
+    );
+
+    if (!valid) {
+      console.warn('[inbox] Signature verification FAILED from:', keyId);
+    } else {
+      console.log('[inbox] Signature verified OK from:', keyId);
+    }
+
+    return valid;
+  } catch (e) {
+    console.error('[inbox] Signature verification error:', e);
+    return false;
+  }
+}
+
 // Handle Follow activity
-async function handleFollow(db: D1Database, activity: any, instanceDomain: string) {
+async function handleFollow(db: D1Database, activity: any, instanceDomain: string, privateKey?: string) {
   const followerActor = activity.actor;
   const followerDomain = new URL(followerActor).hostname;
 
   console.log('Processing Follow from:', followerActor);
 
-  // Check if already following
+  // Fetch actor to get inbox URL
+  let inboxUrl: string | null = null;
+  let sharedInboxUrl: string | null = null;
+  try {
+    const actorResponse = await fetch(followerActor, {
+      headers: { 'Accept': 'application/activity+json' }
+    });
+    if (actorResponse.ok) {
+      const actor = await actorResponse.json() as any;
+      inboxUrl = actor.inbox || null;
+      sharedInboxUrl = actor.endpoints?.sharedInbox || actor.inbox || null;
+    }
+  } catch (e) {
+    console.error('Failed to fetch follower actor:', e);
+  }
+
   const existing = await db.prepare(`
     SELECT id FROM federated_instances WHERE instance_url = ?
   `).bind(followerActor).first();
 
   if (!existing) {
-    // Add new follower
     await db.prepare(`
       INSERT INTO federated_instances 
-      (id, instance_url, instance_name, status, last_seen, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      (id, instance_url, instance_name, shared_inbox, status, last_seen, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(
       crypto.randomUUID(),
       followerActor,
       followerDomain,
+      sharedInboxUrl,
       'active',
       new Date().toISOString(),
       new Date().toISOString()
     ).run();
-
-    console.log('Added new follower:', followerDomain);
   } else {
-    // Update last_seen
     await db.prepare(`
       UPDATE federated_instances 
-      SET last_seen = ?, status = 'active'
+      SET last_seen = ?, status = 'active', shared_inbox = ?
       WHERE instance_url = ?
-    `).bind(new Date().toISOString(), followerActor).run();
-
-    console.log('Updated existing follower:', followerDomain);
+    `).bind(new Date().toISOString(), sharedInboxUrl, followerActor).run();
   }
 
-  // Send Accept activity back to the follower
+  // Send Accept activity back — now signed
   const acceptActivity = {
     '@context': 'https://www.w3.org/ns/activitystreams',
     type: 'Accept',
@@ -107,8 +213,8 @@ async function handleFollow(db: D1Database, activity: any, instanceDomain: strin
     object: activity
   };
 
-  // Deliver Accept to follower's inbox
-  await deliverActivity(followerActor, acceptActivity);
+  const keyId = `https://${instanceDomain}/federation/actor#main-key`;
+  await deliverActivity(followerActor, acceptActivity, privateKey, keyId);
 }
 
 // Handle Unfollow (Undo Follow)
@@ -172,13 +278,10 @@ async function handleCreate(db: D1Database, activity: any) {
 }
 
 // Deliver activity to remote inbox
-async function deliverActivity(actorUrl: string, activity: any) {
+async function deliverActivity(actorUrl: string, activity: any, privateKey?: string, keyId?: string) {
   try {
-    // Fetch actor to get their inbox
     const actorResponse = await fetch(actorUrl, {
-      headers: {
-        'Accept': 'application/activity+json'
-      }
+      headers: { 'Accept': 'application/activity+json' }
     });
 
     if (!actorResponse.ok) {
@@ -187,28 +290,27 @@ async function deliverActivity(actorUrl: string, activity: any) {
     }
 
     const actor = await actorResponse.json() as any;
-    const inboxUrl = actor.inbox;
+    const inboxUrl = actor.endpoints?.sharedInbox || actor.inbox;
 
     if (!inboxUrl) {
       console.error('Actor has no inbox:', actorUrl);
       return;
     }
 
-    // TODO: Sign the request with HTTP signatures
-    // For now, send unsigned (many servers will accept it for Accept activities)
-    const response = await fetch(inboxUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/activity+json',
-        'Accept': 'application/activity+json'
-      },
-      body: JSON.stringify(activity)
-    });
-
-    if (response.ok) {
-      console.log('Delivered activity to:', inboxUrl);
+    if (privateKey && keyId) {
+      const { signAndSend } = await import('./federation-sign.js');
+      await signAndSend(privateKey, keyId, inboxUrl, activity);
     } else {
-      console.error('Failed to deliver activity:', response.status, await response.text());
+      // Unsigned fallback — used for Accept during Follow handling
+      const response = await fetch(inboxUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/activity+json',
+          'Accept': 'application/activity+json'
+        },
+        body: JSON.stringify(activity)
+      });
+      console.log(`[federation] Unsigned delivery to ${inboxUrl}: ${response.status}`);
     }
   } catch (error) {
     console.error('Error delivering activity:', error);

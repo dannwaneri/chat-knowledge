@@ -2,12 +2,24 @@ name = "chat-knowledge-api"
 main = "src/worker/index.ts"
 compatibility_date = "2024-01-01"
 
-# INSTRUCTIONS:
+# ============================================================
+# SETUP INSTRUCTIONS
+# ============================================================
 # 1. Copy this file to wrangler.toml
 # 2. Run: wrangler d1 create chat-knowledge-db
-# 3. Replace YOUR_DATABASE_ID below with the ID from step 2
-# 4. Run: wrangler vectorize create chat-knowledge-embeddings --dimensions=768 --metric=cosine
-# 5. Replace YOUR_INDEX_NAME below with the name from step 4
+#    → Replace YOUR_DATABASE_ID below with the ID returned
+# 3. Run: wrangler vectorize create chat-knowledge-index --dimensions=768 --metric=cosine
+#    → Replace YOUR_INDEX_NAME below with the name returned
+# 4. Run schema migration:
+#    wrangler d1 execute chat-knowledge-db --remote --file=schema.sql
+# 5. Generate RSA keypair for ActivityPub:
+#    node -e "const {generateKeyPairSync}=require('crypto');const {publicKey,privateKey}=generateKeyPairSync('rsa',{modulusLength:2048,publicKeyEncoding:{type:'spki',format:'pem'},privateKeyEncoding:{type:'pkcs8',format:'pem'}});console.log('PUBLIC:',publicKey);console.log('PRIVATE:',privateKey);"
+#    → Store private key: wrangler secret put ACTIVITYPUB_PRIVATE_KEY
+#    → Update publicKeyPem in src/worker/routes/actor.ts with the public key
+# 6. Set your API key (used for owner login, MCP access, CLI capture):
+#    wrangler secret put API_KEY
+# 7. Deploy: npm run deploy
+# ============================================================
 
 [[d1_databases]]
 binding = "DB"
@@ -16,7 +28,32 @@ database_id = "YOUR_DATABASE_ID"  # Replace with your D1 database ID
 
 [[vectorize]]
 binding = "VECTORIZE"
-index_name = "YOUR_INDEX_NAME"  # Replace with your Vectorize index name
+index_name = "YOUR_INDEX_NAME"  # Replace with your Vectorize index name (e.g. chat-knowledge-index)
 
 [ai]
 binding = "AI"
+
+[vars]
+ENVIRONMENT = "production"
+INSTANCE_NAME = "My Foundation Instance"          # Change to your instance name
+INSTANCE_DOMAIN = "your-worker.workers.dev"       # Change to your Worker domain
+ADMIN_EMAIL = "you@example.com"                   # Change to your email
+
+# ============================================================
+# SECRETS (set via wrangler secret put, never store here)
+# ============================================================
+# ACTIVITYPUB_PRIVATE_KEY  — RSA private key for federation signing
+# API_KEY                  — Your owner API key for private access
+# ANTHROPIC_API_KEY        — Optional, only needed if using Claude API directly
+# ============================================================
+
+# ============================================================
+# DURABLE OBJECTS (required for MCP server)
+# ============================================================
+[[durable_objects.bindings]]
+name = "MCP_OBJECT"
+class_name = "FoundationMCP"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["FoundationMCP"]

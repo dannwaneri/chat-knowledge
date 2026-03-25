@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { Env } from '../../types/index.js';
+import { ChatSanitizer } from '../utils/sanitizer.js';
 
 // ============================================
 // TYPES - matches what capture.js sends
@@ -21,21 +22,22 @@ interface FileRef {
 }
 
 interface ExtensionMessage {
-  id: string;                    // Claude's UUID for this message
+  id: string;
   conversation_id: string;
   role: 'user' | 'assistant';
-  content: ContentBlock[];       // parsed content blocks from capture.js
-  timestamp: number;             // ms since epoch
+  content: ContentBlock[];
+  timestamp: number;
   truncated: boolean;
   parent_message_uuid?: string | null;
   file_refs: FileRef[];
 }
 
 interface ExtensionImportRequest {
-  id: string;                    // conversation UUID from Claude
+  id: string;
   title: string;
-  summary?: string;              // Claude auto-generates this
-  created_at?: string;           // when conversation happened in Claude
+  summary?: string;
+  model?: string;
+  created_at?: string;
   updated_at?: string;
   message_count: number;
   messages: ExtensionMessage[];
@@ -54,7 +56,6 @@ app.post('/', async (c) => {
       summary,
       created_at,
       messages,
-      extension_version,
     } = data;
 
     if (!conversation_id || !title || !messages?.length) {
@@ -68,10 +69,10 @@ app.post('/', async (c) => {
     // ============================================
 
     await c.env.DB.prepare(`
-      INSERT OR REPLACE INTO chats 
-        (id, title, summary, source, visibility, message_count, created_at, imported_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(
+    INSERT OR REPLACE INTO chats 
+      (id, title, summary, source, visibility, message_count, created_at, imported_at, model)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
       conversation_id,
       title,
       summary || null,
@@ -79,22 +80,31 @@ app.post('/', async (c) => {
       'private',
       messages.length,
       created_at || null,
-      new Date().toISOString()
+      new Date().toISOString(),
+      data.model || null
     ).run();
 
     console.log(`✓ Chat record created: ${conversation_id}`);
 
     // ============================================
     // STEP 2: Store each message
-    // New - messages are now the source of truth
     // ============================================
+
+    // Sanitise all messages before storage
+    const sanitizer = new ChatSanitizer();
+    const sanitizedMessages = await sanitizer.redactChat(
+      messages.map(m => ({ speaker: m.role, content: reconstructContent(m.content) })),
+      { autoRedactCritical: true }
+    );
+
+    const redactedCount = sanitizedMessages.filter(m => m.redacted).length;
+    if (redactedCount > 0) {
+      console.log(`[import-extension] Redacted secrets from ${redactedCount} message(s)`);
+    }
 
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
-
-      // Reconstruct full text from content blocks for storage
-      // This is what the chat viewer will render
-      const fullContent = reconstructContent(msg.content);
+      const fullContent = sanitizedMessages[i].content; // use sanitised content
 
       await c.env.DB.prepare(`
         INSERT OR REPLACE INTO messages
@@ -115,11 +125,9 @@ app.post('/', async (c) => {
 
     // ============================================
     // STEP 3: Create chunks for semantic search
-    // Chunks are derived from messages, not the source of truth
-    // Each chunk references its source message via message_id
     // ============================================
 
-    const chunks = buildSearchChunks(messages);
+    const chunks = buildSearchChunks(messages, sanitizedMessages);
     console.log(`✓ Built ${chunks.length} search chunks from ${messages.length} messages`);
 
     const vectors = [];
@@ -128,14 +136,12 @@ app.post('/', async (c) => {
       const chunk = chunks[i];
       const chunkId = `${conversation_id}-chunk-${i}`;
 
-      // Generate embedding
       const embeddingResult = await c.env.AI.run('@cf/baai/bge-base-en-v1.5', {
         text: chunk.content
       });
 
       const embedding = embeddingResult.data[0];
 
-      // Store chunk - clean content, no frontmatter headers
       await c.env.DB.prepare(`
         INSERT OR REPLACE INTO chunks
           (id, chat_id, message_id, chunk_index, content, metadata, vector_id, created_at)
@@ -162,7 +168,6 @@ app.post('/', async (c) => {
       });
     }
 
-    // Upsert all vectors at once
     if (vectors.length > 0) {
       await c.env.VECTORIZE.upsert(vectors);
       console.log(`✓ Upserted ${vectors.length} vectors to Vectorize`);
@@ -187,8 +192,6 @@ app.post('/', async (c) => {
 
 // ============================================
 // RECONSTRUCT FULL MESSAGE TEXT
-// Joins content blocks back into readable markdown
-// This is what the chat viewer renders
 // ============================================
 
 function reconstructContent(blocks: ContentBlock[]): string {
@@ -203,12 +206,13 @@ function reconstructContent(blocks: ContentBlock[]): string {
 
 // ============================================
 // BUILD SEARCH CHUNKS
-// Pairs user questions with assistant answers
-// Each chunk links back to its source message
-// Clean content only - no frontmatter headers
+// Uses sanitized content so vectors never contain raw secrets
 // ============================================
 
-function buildSearchChunks(messages: ExtensionMessage[]) {
+function buildSearchChunks(
+  messages: ExtensionMessage[],
+  sanitized: Array<{ speaker: string; content: string; redacted: boolean }>
+) {
   const chunks: {
     content: string;
     message_id: string;
@@ -221,15 +225,12 @@ function buildSearchChunks(messages: ExtensionMessage[]) {
     const msg = messages[i];
 
     if (msg.role === 'user' && messages[i + 1]?.role === 'assistant') {
-      // Q&A pair - most useful unit for search
-      const userText = extractText(messages[i].content);
-      const assistantText = extractText(messages[i + 1].content);
-
-      const combined = `Q: ${userText}\n\nA: ${assistantText}`;
+      const userText = sanitized[i].content;
+      const assistantText = sanitized[i + 1].content;
 
       chunks.push({
-        content: combined,
-        message_id: msg.id,  // anchor to the user message
+        content: `Q: ${userText}\n\nA: ${assistantText}`,
+        message_id: msg.id,
         metadata: {
           type: 'qa_pair',
           message_index: i,
@@ -242,12 +243,10 @@ function buildSearchChunks(messages: ExtensionMessage[]) {
       i += 2;
 
     } else {
-      // Standalone message (first message, orphaned messages, etc.)
-      const text = extractText(msg.content);
       const label = msg.role === 'user' ? 'User' : 'Assistant';
 
       chunks.push({
-        content: `${label}: ${text}`,
+        content: `${label}: ${sanitized[i].content}`,
         message_id: msg.id,
         metadata: {
           type: 'standalone',
@@ -263,23 +262,6 @@ function buildSearchChunks(messages: ExtensionMessage[]) {
   }
 
   return chunks;
-}
-
-// ============================================
-// EXTRACT PLAIN TEXT FROM CONTENT BLOCKS
-// Used for building search chunks
-// Keeps code blocks as code fences for context
-// ============================================
-
-function extractText(blocks: ContentBlock[]): string {
-  return blocks.map(block => {
-    if (block.type === 'code') {
-      const lang = block.language && block.language !== 'text' ? block.language : '';
-      // Keep code in chunks so searches for code patterns work
-      return `\`\`\`${lang}\n${block.content}\n\`\`\``;
-    }
-    return block.content;
-  }).join('\n\n').trim();
 }
 
 export default app;

@@ -38,13 +38,13 @@ actor.get('/actor', async (c) => {
       id: `https://${instanceDomain}/federation/actor#main-key`,
       owner: `https://${instanceDomain}/federation/actor`,
       publicKeyPem: `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsM5d3854NeA9nJztCFkY
-q+Vn3JhFkJVzeyBFLshqxF/boG0SVYpnbuUzIDgwrb3ei98xJBVlZ0gjMz8Fkk7v
-FE3WpSBHJYJQbFSqURK/fzXCVoYiY/mEDOmM41VoPnUHNJp51d2irdu8jW6V203b
-03MFTL4z02muS+LdvL5s88FdJIHztbHZlQQKyCEuQaqZhD3LqrsPv7gIqfC/Q5+g
-srcuaY5IoCUEfcDbLbYzcst1cuv+y39NDFZUJfyzxK4/lptDG2wWG+Xx5yT/rAiu
-IW7Gm+3P3sttAU+oUd17GBjmQBlLXbR1SMfJiMIra9vAsgnPDmapRLUzD4ph5u1d
-TQIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqFWUukHzzSrQtVmgNLsi
+V/JmvzztzDgv0bYQ8aTCvFjr5v6mfwm4kwxvqqP9Ywph8sK3xgS6/kz95R3NpKdx
+5Aa+WbwHJyzaixaVMTM+9sZuU8TdbQW+tGXo/YtJ5tW67n1MO39WHFO04NF6CcZo
+Bc99BxVMUxnBdRPWXcEaABsawbaunKfreV1j4p7dp1X078VaOKgrVN33XRlMf8TC
+SE//QhIWSI4FqbvIcwy7W0mAFhXWl8hAdjsbuzYNnWvnUrZb0Z75OZH3v0HmqeEI
+VGTzc3I84w2WBMO824cQ5ZPdb6wyf7mMws4A1VUNsQ23ghWOWS6BXGQNVb4f45FZ
+7wIDAQAB
 -----END PUBLIC KEY-----`
     },
     

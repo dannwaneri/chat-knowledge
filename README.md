@@ -1,6 +1,6 @@
 # The Foundation: Federated AI Knowledge Commons
 
-> Capture your Claude conversations. Search them semantically. Share them safely via ActivityPub.
+> Capture your Claude conversations. Extract insights. Share them on the decentralised web via ActivityPub.
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/dannwaneri/chat-knowledge)
 
@@ -8,109 +8,116 @@
 
 **Knowledge collapse is happening in real-time.**
 
-- Stack Overflow traffic down 78% since ChatGPT launched
-- Best debugging solutions live in private AI chats  
-- No attribution, no discovery, no commons
-- AI trains on AI-generated content with no human verification
+- Stack Overflow questions down 78% since ChatGPT launched — 3,862 questions in December 2025 vs 200,000 at peak
+- Every developer is solving the same problems. Nobody knows it.
+- Best debugging solutions live in private AI chats, never indexed, never discoverable
+- AI trains on AI-generated content with no human verification loop
 
 ## The Solution
 
-**Federated knowledge sharing using ActivityPub.** Like Mastodon, but for developer knowledge.
+**A federated knowledge commons using ActivityPub.** Like Mastodon, but for developer knowledge.
 
-Self-hosted • Privacy-first • Developer-owned
+Run your own instance. Capture your best AI conversations. Share them publicly. Other developers — and future AI models — can learn from what you built.
+
+Self-hosted • Privacy-first • Developer-owned • Fully federated
 
 ## Features
 
-🔍 **Semantic Search** - Find insights across conversations using AI embeddings  
-🎯 **Passage-Level Precision** - Click a result, land on the exact message  
-🌐 **ActivityPub Federation** - Discoverable on Mastodon, ready to federate  
-⚡ **Browser Extension** - Auto-captures via Claude's internal API  
-💰 **Edge-Native** - Self-hosted on Cloudflare Workers (free tier works)  
-📱 **Mobile-Friendly** - Clean UI that works everywhere  
-🔒 **Privacy-First** - All chats private by default. You control what's public  
-🤖 **MCP Integration** - Query your full private knowledge base via Claude Desktop
+🔍 **Semantic Search** — Find insights across conversations using AI embeddings  
+🎯 **Passage-Level Precision** — Click a result, land on the exact message  
+🧠 **Insight Extraction** — Kimi K2.5 extracts decisions, commands, patterns, dead ends  
+🌐 **ActivityPub Federation** — Full two-way federation with HTTP signature verification  
+⚡ **Browser Extension** — Auto-captures Claude.ai conversations via internal API  
+💻 **CLI Capture** — Imports Claude Code sessions from `~/.claude/projects/`  
+🤖 **MCP Integration** — Query your full private knowledge base from Claude Desktop  
+🔒 **Privacy-First** — All chats private by default. You control what's public  
+👤 **Owner Auth** — Login/logout in the UI. Management controls gated behind your API key  
+💰 **Edge-Native** — Self-hosted on Cloudflare Workers (~$2/month, free tier works)
 
 ## Live Demo
 
 Production instance: https://chat-knowledge-api.fpl-test.workers.dev
 
-**Working features:**
-- ✅ Browser extension auto-capture (44 messages, 0 truncation)
-- ✅ Semantic search: 0.80+ relevance scores
-- ✅ Passage-level navigation with scroll-to-highlight
-- ✅ ActivityPub endpoints (NodeInfo, WebFinger, Actor)
-- ✅ Homepage with recent conversations grid
-- ✅ Clean conversation viewer with syntax highlighting
-- ✅ Privacy controls (public/private per chat)
-- ✅ MCP server for Claude Desktop integration
+Follow on the fediverse: `@knowledge@chat-knowledge-api.fpl-test.workers.dev`
 
 ## Quick Start
 
 ### Prerequisites
 - Node.js 18+
 - Cloudflare account (free tier works)
-- Wrangler CLI installed
+- Wrangler CLI: `npm install -g wrangler`
 - Chrome/Edge browser (for extension)
 
-### Installation
-
-#### 1. Deploy Worker Backend
+### 1. Deploy Worker Backend
 
 ```bash
-# Clone the repo
 git clone https://github.com/dannwaneri/chat-knowledge.git
 cd chat-knowledge
-
-# Install dependencies
 npm install
-
-# Login to Cloudflare
 wrangler login
 
 # Create D1 database
 wrangler d1 create chat-knowledge-db
+# Copy wrangler.toml.example → wrangler.toml and add your database_id
 
-# Copy wrangler.toml.example to wrangler.toml
-# Update database_id with your D1 database ID
-
-# Run migrations
+# Run schema
 wrangler d1 execute chat-knowledge-db --remote --file=schema.sql
 
 # Create Vectorize index
 wrangler vectorize create chat-knowledge-index --dimensions=768 --metric=cosine
+# Add index name to wrangler.toml
 
-# Update wrangler.toml with Vectorize index name
+# Generate RSA keypair for ActivityPub federation
+node -e "
+const { generateKeyPairSync } = require('crypto');
+const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+});
+console.log('PUBLIC KEY:');
+console.log(publicKey);
+console.log('PRIVATE KEY:');
+console.log(privateKey);
+"
+# Store private key: wrangler secret put ACTIVITYPUB_PRIVATE_KEY
+# Update publicKeyPem in src/worker/routes/actor.ts with public key
 
-# Generate RSA keypair for ActivityPub
-node generate-keypair.mjs
-
-# Store private key as secret
-wrangler secret put ACTIVITYPUB_PRIVATE_KEY
-# (paste private key when prompted)
-
-# Set API key for private MCP access
+# Set your API key (used for owner login and MCP access)
 wrangler secret put API_KEY
-# (enter a strong key — you'll use this in Claude Desktop config)
-
-# Update src/routes/actor.ts with public key
 
 # Deploy
 npm run deploy
 ```
 
-#### 2. Install Browser Extension
+### 2. Install Browser Extension
+
+1. Go to `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select the `browser-extension/` folder
+
+Then navigate to any Claude conversation and click **Share to Foundation**.
+
+### 3. CLI Capture for Claude Code Sessions
 
 ```bash
-# In Chrome/Edge:
-# 1. Go to chrome://extensions
-# 2. Enable "Developer mode"
-# 3. Click "Load unpacked"
-# 4. Select the extension/ folder
+npm run capture -- --api-key YOUR_API_KEY
 ```
 
-#### 3. Set Up MCP Server (Claude Desktop)
+Scans `~/.claude/projects/` for Claude Code sessions, imports new ones, skips duplicates.
 
-Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on Mac):
+```bash
+# Options
+npm run capture -- --api-key YOUR_KEY --url https://your-worker.workers.dev
+```
+
+### 4. MCP Server (Claude Desktop)
+
+Add to your Claude Desktop config:
+
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`  
+**Mac:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -128,248 +135,191 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 }
 ```
 
-Restart Claude Desktop. No local build required — the MCP server runs on Cloudflare.
-
-### Using the Extension
-
-1. **Navigate to any Claude conversation** on claude.ai
-2. **Look for "📚 Share to Foundation" button** (injected into the page)
-3. **Click it** - conversation automatically captured
-4. **See confirmation:** "✅ Captured X messages"
-5. **Search your knowledge** at your Worker URL
-
-#### What Gets Captured
-
-✅ **Captured:**
-- All user messages and Claude responses
-- Complete text (no truncation)
-- Code blocks with language tags
-- Timestamps on every message
-- Claude's auto-generated summary
-- File attachment metadata
-
-❌ **Not Captured:**
-- File contents (metadata only)
-- Images (not in API response)
-
-### Searching Your Knowledge
-
-Visit your Worker URL to search:
-- Homepage shows recent **public** conversations
-- Search box for semantic queries
-- Click results → land on exact message with highlight
-- "Passage X of Y" labels for multiple matches
+Restart Claude Desktop. The MCP server runs on Cloudflare — no local process needed.
 
 ## Privacy Model
 
-**All captured chats are private by default.** Visitors to your instance only see what you deliberately make public.
-
-### How It Works
+All captured chats are **private by default**. Visitors only see what you explicitly make public.
 
 ```
 Capture chat → private by default
      ↓
-Review in your instance
+Review in your instance (owner login)
      ↓
-Flip to public when ready
+Toggle to public via the UI
      ↓
-Appears on homepage + search for visitors
-     ↓
-(Future) Federates to ActivityPub followers
+Appears on homepage + federated to ActivityPub followers
 ```
 
-### Making a Chat Public
+### Owner Login
 
-```bash
-wrangler d1 execute chat-knowledge-db --remote --command="UPDATE chats SET visibility = 'public' WHERE id = 'your-chat-id'"
-```
+Visit your instance, click **Owner login** in the nav, enter your API key. Management controls (visibility toggles, private chat list) appear when logged in.
 
-To find chat IDs:
-
-```bash
-wrangler d1 execute chat-knowledge-db --remote --command="SELECT id, title, visibility FROM chats"
-```
-
-### MCP vs Public Access
+### Access Levels
 
 | Access | Endpoint | Sees |
 |--------|----------|------|
-| Visitors (browser) | `/chats`, `/search` | Public chats only |
-| You (MCP/Claude Desktop) | `/api/private/chats` + API key | All chats |
-
-This means you get the full power of semantic search across your entire private knowledge base through Claude Desktop, while visitors only see what you've curated.
+| Public visitors | `/chats`, `/search` | Public chats only |
+| Owner (browser) | Same + API key | All chats + management controls |
+| MCP / Claude Desktop | `/api/private/chats` + API key | All chats |
 
 ## Architecture
 
 **Stack:**
-- **Edge Runtime**: Cloudflare Workers
+- **Runtime**: Cloudflare Workers
 - **Database**: D1 (SQLite at the edge)
 - **Vector Store**: Vectorize (768-dim embeddings)
-- **AI Model**: Workers AI (bge-base-en-v1.5)
-- **Federation**: ActivityPub protocol
+- **Embeddings**: Workers AI (bge-base-en-v1.5)
+- **Insight Extraction**: Workers AI (Kimi K2.5 / @cf/moonshotai/kimi-k2.5)
+- **Federation**: ActivityPub with HTTP signatures
 
-**How It Works:**
+**Capture pipeline:**
 
 ```
-Browser Extension
+Browser Extension or CLI
     ↓
-Auto-detects org ID → Fetches conversation from Claude API
+Fetch conversation from Claude API / parse .jsonl
     ↓
-Sends to Worker
+POST to Worker
     ↓
-Worker Processing:
-  - Store in D1 (chats + messages + chunks)
-  - Generate embeddings via Workers AI
-  - Index in Vectorize
-  - Default visibility: private
-    ↓
-Search (public):
-  - Query → embedding → Vectorize match
-  - Filter to public chats only
-  - Return passage snippets with message_index
-  - UI scrolls to exact message, highlights it
-    ↓
-Search (private via MCP):
-  - API key authenticated
-  - Full access to all chats
-  - Used by Claude Desktop MCP integration
-    ↓
-Federation:
-  - ActivityPub Actor with RSA keypair
-  - Inbox processes Follow activities
-  - Discoverable on Mastodon
+  ├── Store in D1 (chats + messages + chunks)
+  ├── Generate embeddings → index in Vectorize
+  └── Trigger async insight extraction (Kimi K2.5)
+         ↓
+  Extract: decisions, commands, patterns, dead ends, context
+  Score with three-signal evaluator (usage, validation, specificity)
+  Store scored insights in D1
 ```
 
-## Why This Approach Works
+**Federation pipeline:**
 
-**Previous Attempt (Clipboard Capture):**
-- ❌ Required manual Ctrl+A, Ctrl+C
-- ❌ Broke with Claude UI changes
-- ❌ Only captured partial conversations
-- ❌ Complex timestamp-based parsing
-
-**Current Approach (API-Based):**
-- ✅ Auto-captures via Claude's internal API
-- ✅ Zero configuration (org ID auto-detected)
-- ✅ Complete conversations (all messages, artifacts)
-- ✅ Won't break with UI updates
-- ✅ Clean, structured data
+```
+Incoming activity (Follow, Undo, Create)
+    ↓
+Verify HTTP signature against sender's public key
+    ↓
+Process activity (store follower, send signed Accept)
+    ↓
+On chat → public: auto-broadcast signed Note to all followers
+```
 
 ## ActivityPub Federation
 
-The Foundation is discoverable on the fediverse:
+Foundation is a full ActivityPub actor on the fediverse.
 
-**Working endpoints:**
-- `/.well-known/nodeinfo` - Instance metadata
-- `/.well-known/webfinger` - User discovery
-- `/federation/actor` - ActivityPub identity
-- `/federation/inbox` - Receive Follow activities
-- `/federation/followers` - Follower collection
-- `/federation/following` - Following collection
+**Endpoints:**
+- `/.well-known/nodeinfo` — Instance metadata
+- `/.well-known/webfinger` — User discovery
+- `/federation/actor` — Actor profile with public key
+- `/federation/inbox` — Receives activities (signature-verified)
+- `/federation/followers` — Follower collection
+- `/federation/outbox` — Outbox
 
 **To follow from Mastodon:**
 Search for `@knowledge@your-worker-domain.workers.dev`
 
-## Why This Matters
+**Inbound verification:** All incoming activities are verified against the sender's public key using RSASSA-PKCS1-v1_5 + SHA-256. Unsigned activities are rejected with 401.
 
-**It solves knowledge collapse:**
-- ✅ Insights stay discoverable (semantic search)
-- ✅ Attribution preserved (source tracking)
-- ✅ No platform risk (self-hosted)
-- ✅ Can't be enshittified (you own the instance)
+**Outbound signing:** All delivered activities (Accept, broadcast Notes) are signed with your private key.
 
-**It's truly decentralized:**
-- ActivityPub = proven federation (powers Mastodon's 10M+ users)
-- Developer-owned instances
-- No corporate overlord
-- Open protocol
+**Auto-broadcast:** When you toggle a chat from private → public, Foundation automatically delivers a signed Note to all followers with the chat title, summary, and link.
 
-**It's viable at scale:**
-- Edge-native architecture
-- D1 for storage, Vectorize for search
-- ~$2/month on free tier
-- <100ms search latency
+**Manual broadcast:**
+```powershell
+Invoke-RestMethod -Uri "https://your-worker.workers.dev/api/federation/broadcast" `
+  -Method POST `
+  -Headers @{"X-API-Key"="your-key"; "Content-Type"="application/json"} `
+  -Body '{"activity": {"@context": "https://www.w3.org/ns/activitystreams", "type": "Create", "actor": "https://your-worker.workers.dev/federation/actor", "object": {"type": "Note", "content": "Hello fediverse!"}}}'
+```
+
+## Insight Extraction
+
+Foundation uses Kimi K2.5 (`@cf/moonshotai/kimi-k2.5`) on Workers AI to extract structured insights from every captured conversation.
+
+**Insight types:**
+- `command` — copy-ready commands and exact values
+- `decision` — architectural choices and why
+- `solution` — bugs fixed, approaches that worked
+- `pattern` — recurring approaches worth reusing
+- `dead_end` — what failed and why
+- `commitment` — open threads and deferred decisions
+- `context` — background needed to understand the work
+
+**Quality:** Kimi K2.5 produces 3-4x more insights than Llama 3.3 70B on the same conversation (14 → 46 on a 1,168-message session) at zero additional API cost.
 
 ## Roadmap
 
 **Completed:**
-- [x] Browser extension with API-based capture
+- [x] Browser extension — auto-capture via Claude internal API
+- [x] CLI capture — Claude Code sessions from `~/.claude/projects/`
 - [x] Semantic search with Vectorize
 - [x] Passage-level scroll-to-highlight
-- [x] ActivityPub federation infrastructure
-- [x] Homepage with recent conversations
-- [x] Clean conversation viewer
-- [x] Mobile-friendly UI
-- [x] Privacy controls (public/private per chat)
+- [x] Insight extraction — Kimi K2.5, 8 insight types
+- [x] Three-signal evaluator scoring (usage, validation, specificity)
+- [x] ActivityPub federation — full two-way with HTTP signatures
+- [x] Auto-broadcast on chat → public
+- [x] Collections — group chats by topic
+- [x] Owner auth — login/logout in UI
+- [x] Chat + collection visibility toggles in UI
+- [x] Model field capture (tracks which LLM generated each conversation)
 - [x] MCP server for Claude Desktop
-- [x] Private API endpoint for authenticated access
-- [x] Remote MCP server via Cloudflare Agents SDK (no local process)
-- [x] Polish UX toggle (Raw/Polished view for user messages)
+- [x] `minScore` filtering on insights API
 
-**Next Month:**
-- [ ] Test Mastodon follow flow
-- [ ] Collections feature
-- [ ] Analytics dashboard
-- [ ] One-click visibility toggle in UI
-
-**3-6 Months:**
-- [ ] Federated Q&A (separate product, same protocol)
+**Next:**
 - [ ] Cross-instance search
-- [ ] Mobile app
+- [ ] Federated chat import (follow another Foundation instance, import their public chats)
 - [ ] Chrome Web Store publication
-
-## Contributing
-
-This is infrastructure for the developer commons. Contributions welcome!
-
-**Ways to help:**
-- 🐛 Report bugs via Issues
-- 💡 Suggest features
-- 🔧 Submit PRs
-- 📝 Improve documentation
-- 🌐 Run your own instance and federate
+- [ ] Self-hosting guide for non-developers
 
 ## Troubleshooting
 
-### Extension not capturing?
-- Make sure you're on claude.ai (not other sites)
-- Look for the "Share to Foundation" button
-- Check browser console for errors (F12)
-- Reload the extension at chrome://extensions
+**Extension not capturing?**
+- Confirm you're on claude.ai
+- Look for "Share to Foundation" button
+- Check browser console (F12) for errors
 
-### Search not finding conversations?
-- Wait ~30 seconds after capture for indexing
-- Try broader search terms
-- Check Worker logs: `wrangler tail`
-- Remember: search only returns public chats for visitors
+**CLI not finding sessions?**
+- Run Claude Code in a project first: `cd your-project && claude`
+- Check `~/.claude/projects/` exists after use
 
-### MCP not connecting?
-- Verify `API_KEY` secret is set: `wrangler secret list`
-- Confirm key in config matches exactly (no spaces around the colon)
-- Fully restart Claude Desktop (quit from tray, not just close window)
-- Test the endpoint directly: `curl https://your-worker.workers.dev/mcp`
+**Insights not extracting?**
+- Check wrangler tail for extraction logs
+- Kimi K2.5 requires `max_tokens: 8192` — verify in `insights.ts`
 
-### ActivityPub not working?
-- Verify public key is in actor.ts
-- Verify private key stored: `wrangler secret list`
-- Test endpoints manually with curl
+**Search returning no results?**
+- Wait ~30 seconds after capture for Vectorize indexing
+- Search only returns public chats for unauthenticated visitors
 
-## License
+**MCP not connecting?**
+- Verify `API_KEY` secret: `wrangler secret list`
+- Fully restart Claude Desktop (quit from tray)
+- Test: `curl -H "X-API-Key: your-key" https://your-worker.workers.dev/api/private/chats`
 
-MIT License - see LICENSE file
+**ActivityPub not federating?**
+- Verify `ACTIVITYPUB_PRIVATE_KEY` secret is set
+- Check public key in `actor.ts` matches the stored private key
+- Test: `curl https://your-worker.workers.dev/federation/actor`
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full guide.
+
+**Priority areas:**
+- Run your own instance and federate with others
+- Test ActivityPub compatibility with non-Mastodon servers
+- Cross-instance search implementation
+- Documentation improvements
 
 ## Related Articles
 
-1. [The Foundation Update: From Theory to Working Federation](https://dev.to/the-foundation/the-foundation-update-from-theory-to-working-federation-2ejm) - What changed and why
-2. [I Built Federated AI Knowledge Commons](https://dev.to/the-foundation/i-built-federated-ai-knowledge-commons-heres-how-56oj) - Original launch article
+- [The Foundation Update: From Theory to Working Federation](https://dev.to/the-foundation/the-foundation-update-from-theory-to-working-federation-2ejm)
+- [I Built a Federated AI Knowledge Commons](https://dev.to/the-foundation/i-built-federated-ai-knowledge-commons-heres-how-56oj)
+- [How to Build a Production RAG System with Cloudflare Workers](https://www.freecodecamp.org/news/build-a-production-rag-system-with-cloudflare-workers-handbook) — freeCodeCamp
 
 ## Author
 
-Built by [Daniel Nwaneri](https://github.com/dannwaneri)  
-Cloudflare Workers specialist • AI integration • Edge computing
+Built by [Daniel Nwaneri](https://github.com/dannwaneri) — Cloudflare Workers specialist, edge computing, AI integration
 
 ---
 
 **The knowledge commons doesn't rebuild itself. But we can build it together.**
-
-Star ⭐ this repo if you believe in preserving developer knowledge!
