@@ -5,7 +5,7 @@ import { scoreSpecificity } from './evaluator.js';
 const insights = new Hono<{ Bindings: Env }>();
 
 const PAGE_SIZE = 50;
-const PAGES_PER_PASS = 3; // 300 messages per pass
+const PAGES_PER_PASS = 2; // 100 messages per pass
 
 interface InsightItem {
   content: string;

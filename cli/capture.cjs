@@ -29,8 +29,8 @@ for (let i = 0; i < args.length; i++) {
       '  --help            Show this help',
       '',
       'Examples:',
-      '  node capture.cjs --api-key Dans417',
-      '  FOUNDATION_API_KEY=Dans417 node capture.cjs',
+      '  node capture.cjs --api-key YOUR_API_KEY',
+      '  FOUNDATION_API_KEY=YOUR_API_KEY node capture.cjs',
     ].join('\n'));
     process.exit(0);
   }
